@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saia-eb-agent"
+version = "0.1.0"
+description = "Safe local assistant for EasyBuild candidate discovery and barnard-ci patch preparation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "saia-eb-agent" }]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "pydantic>=2.7",
+  "httpx>=0.27",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+]
+
+[project.scripts]
+saia-eb-agent = "saia_eb_agent.cli:app"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["src"]

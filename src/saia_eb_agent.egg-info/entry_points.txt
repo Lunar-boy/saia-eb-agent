@@ -1,0 +1,2 @@
+[console_scripts]
+saia-eb-agent = saia_eb_agent.cli:app

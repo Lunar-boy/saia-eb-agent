@@ -1,0 +1,17 @@
+gpu_clusters:
+  - alpha
+  - capella
+cpu_clusters:
+  - romeo
+  - barnard
+  - julia
+  - capella
+forbidden_gpu_clusters:
+  - romeo
+  - barnard
+  - julia
+shared_install_domains:
+  - [alpha, romeo]
+alpha_dependency_search_clusters:
+  - alpha
+  - romeo
