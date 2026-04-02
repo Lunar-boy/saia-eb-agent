@@ -35,3 +35,12 @@ def cluster_allowed(target_cluster: str, is_gpu: bool, policy: PlacementPolicy) 
     if not is_gpu and target_cluster not in (set(policy.cpu_clusters) | set(policy.gpu_clusters)):
         return False, f"Cluster '{target_cluster}' not recognized in policy"
     return True, "allowed"
+
+
+def expand_target_kind(target_kind: str, policy: PlacementPolicy) -> list[str]:
+    kind = target_kind.strip().lower()
+    if kind == "cpu":
+        return sorted(set(policy.cpu_clusters))
+    if kind == "gpu":
+        return sorted(set(policy.gpu_clusters))
+    raise ValueError("target_kind must be 'cpu' or 'gpu'")

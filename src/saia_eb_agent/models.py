@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+
+TargetKind = Literal["cpu", "gpu"]
+
+
+@dataclass
+class EasyconfigPatch:
+    declared_as: str
+    filename: str
+    resolved_path: Path | None = None
+    exists: bool = False
 
 
 @dataclass
@@ -17,6 +28,7 @@ class EasyconfigMetadata:
     dependencies_raw: str | None = None
     sources_raw: str | None = None
     easyblock: str | None = None
+    patches: list[EasyconfigPatch] = field(default_factory=list)
     parsed_ok: bool = True
     parse_warnings: list[str] = field(default_factory=list)
 
@@ -28,6 +40,7 @@ class Candidate:
     reasons: list[str]
     likely_edits: list[str]
     risk_notes: list[str]
+    toolchain_match_reason: str = ""
 
 
 @dataclass
@@ -46,11 +59,9 @@ class ValidationResult:
 @dataclass
 class RecommendRequest:
     software: str
-    version: str | None
-    cluster: str
-    release: str
-    gpu: bool
-    preferred_toolchain: str | None = None
+    toolchain_query: str | None
+    target_kind: TargetKind
+    release: str | None = None
     keywords: list[str] = field(default_factory=list)
 
 
@@ -62,4 +73,5 @@ class WorkflowResult:
     validation: ValidationResult | None
     operations: list[str]
     mr_artifacts: dict[str, str]
+    cluster_validations: dict[str, ValidationResult] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)

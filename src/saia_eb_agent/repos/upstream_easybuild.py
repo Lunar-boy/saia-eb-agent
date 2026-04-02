@@ -28,5 +28,19 @@ class UpstreamEasyBuildRepo:
 
     def scan_easyconfigs(self) -> list[Path]:
         if not self.repo_dir.exists():
-            raise RuntimeError("Upstream repo is not available. Run search/recommend with --refresh-upstream.")
+            raise RuntimeError("Upstream repo is not available.")
         return sorted(self.repo_dir.rglob("*.eb"))
+
+    def resolve_patch_path(self, easyconfig_path: Path, patch_filename: str) -> Path | None:
+        local_candidates = [
+            easyconfig_path.parent / patch_filename,
+            easyconfig_path.parent / "patches" / patch_filename,
+        ]
+        for candidate in local_candidates:
+            if candidate.exists():
+                return candidate
+
+        for found in self.repo_dir.rglob(patch_filename):
+            if found.is_file():
+                return found
+        return None

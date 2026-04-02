@@ -29,7 +29,12 @@ def render_report(result: WorkflowResult) -> str:
 
     lines.append("")
     lines.append("## Validation")
-    if result.validation is None:
+    if result.cluster_validations:
+        for cluster, validation in result.cluster_validations.items():
+            lines.append(f"- {cluster}: {'PASS' if validation.ok else 'FAIL'}")
+            for issue in validation.issues:
+                lines.append(f"  - [{issue.severity}] {issue.code}: {issue.message}")
+    elif result.validation is None:
         lines.append("- Validation not executed")
     else:
         lines.append(f"- Result: {'PASS' if result.validation.ok else 'FAIL'}")

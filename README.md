@@ -74,11 +74,27 @@ If `SAIA_API_KEY` is unset, the tool runs in rule-only mode.
 ## CLI Commands
 
 ```bash
-saia-eb-agent search --software GROMACS --version 2024.4 --cluster alpha --release r24.10 --gpu --refresh-upstream
+saia-eb-agent search --software GROMACS --tc GCC14.2.0
 ```
 
 ```bash
-saia-eb-agent recommend --software Foo --version 2024.4 --cluster capella --release r25.06 --report out.md
+saia-eb-agent search --software GROMACS --tc foss2025a --cluster gpu
+```
+
+```bash
+saia-eb-agent apply --software GROMACS --tc foss2025a --cluster gpu --release r25.06 --barnard-ci /path/to/barnard-ci --apply
+```
+
+```bash
+saia-eb-agent guide
+```
+
+```bash
+saia-eb-agent memory show
+```
+
+```bash
+saia-eb-agent memory set-barnard-ci /path/to/barnard-ci
 ```
 
 ```bash
@@ -86,12 +102,49 @@ saia-eb-agent validate --file /path/to/Foo-1.2.3-GCC-13.2.0.eb --cluster romeo -
 ```
 
 ```bash
-saia-eb-agent apply --software Foo --version 1.2.3 --cluster capella --release r25.06 --barnard-ci /path/to/barnard-ci --apply --report out.md
+saia-eb-agent prepare-mr --file /path/to/Foo-1.2.3-GCC-13.2.0.eb --cluster romeo --release r25.06
 ```
 
-```bash
-saia-eb-agent prepare-mr --file /path/to/Foo-1.2.3-GCC-13.2.0.eb --cluster capella --release r25.06
-```
+### Search behavior changes
+
+- Search no longer accepts `--version`, `--release`, `--gpu`, or `--refresh-upstream`.
+- Search auto-refreshes upstream easyconfigs automatically (unless `--local-upstream` is used).
+- Toolchain query uses `--tc` and resolves family equivalents (for example `GCC14.2.0` may match `GCC-14.2.0`, `GCCcore-14.2.0`, `foss-2025a`, `gfbf-2025a`).
+- Search output includes toolchain match rationale and patch visibility (`found/declared`).
+
+### Target cluster abstraction
+
+- User-facing `--cluster` is now target kind: `cpu` or `gpu`.
+- `cpu` expands to all CPU clusters from policy.
+- `gpu` expands to all GPU clusters from policy.
+- Apply/validation summary is reported per concrete cluster.
+
+### Guided mode
+
+- `saia-eb-agent guide` (or `saia-eb-agent agent`) runs the full pipeline automatically:
+1. collect missing parameters via English prompts
+2. search
+3. recommend/select best candidate
+4. validate on all expanded target clusters
+5. apply (if enabled)
+6. prepare MR artifacts
+
+- Guided mode remembers session values inside one run.
+
+### Persistent memory
+
+- Stored at `~/.config/saia-eb-agent/state.json` (schema versioned).
+- Remembers:
+- `remembered_barnard_ci_path`
+- `last_release`
+- `release_history`
+- last target kind/toolchain query hints
+- Release reuse prompt:
+- `Last release was r25.06. Press Enter to reuse it, or type a new release:`
+- Memory commands:
+- `saia-eb-agent memory show`
+- `saia-eb-agent memory set-barnard-ci /path/to/barnard-ci`
+- `saia-eb-agent memory clear`
 
 ## Encoded Policy
 
@@ -142,5 +195,11 @@ Coverage targets key logic:
 - easyconfig metadata extraction
 - policy engine behavior
 - ranking heuristics
+- toolchain normalization/alias expansion (including LLM fallback behavior)
+- search auto-refresh behavior
+- patch extraction/resolution metadata
+- multi-cluster apply and validation aggregation
+- persistent state load/save
+- guided workflow path
 - static validation checks
 - apply workflow in temporary repos

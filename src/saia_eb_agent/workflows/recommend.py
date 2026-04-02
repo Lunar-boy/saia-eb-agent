@@ -6,7 +6,7 @@ from saia_eb_agent.config import AppSettings
 from saia_eb_agent.models import RecommendRequest, WorkflowResult
 from saia_eb_agent.providers.saia import SAIAProvider
 from saia_eb_agent.reporting.markdown import render_report, write_report
-from saia_eb_agent.workflows.prepare_mr import build_mr_artifacts
+from saia_eb_agent.workflows.prepare_mr import build_mr_artifacts_for_clusters
 from saia_eb_agent.workflows.search import search_candidates
 
 
@@ -14,10 +14,9 @@ def recommend(
     settings: AppSettings,
     request: RecommendRequest,
     report_path: Path | None = None,
-    refresh_upstream: bool = False,
     local_upstream_path: Path | None = None,
 ) -> WorkflowResult:
-    ranked = search_candidates(settings, request, refresh_upstream=refresh_upstream, local_upstream_path=local_upstream_path)
+    ranked = search_candidates(settings, request, local_upstream_path=local_upstream_path)
     selected = ranked[0] if ranked else None
 
     notes = []
@@ -28,7 +27,7 @@ def recommend(
             f"software={selected.metadata.software_name}\n"
             f"version={selected.metadata.version}\n"
             f"toolchain={selected.metadata.toolchain_name}-{selected.metadata.toolchain_version}\n"
-            f"cluster={request.cluster}, release={request.release}, gpu={request.gpu}\n"
+            f"target_kind={request.target_kind}, release={request.release}\n"
         )
         try:
             notes.append(provider.generate_text(prompt))
@@ -37,7 +36,9 @@ def recommend(
     else:
         notes.append("Rule-only mode: SAIA provider not configured or unavailable.")
 
-    mr = build_mr_artifacts(request.cluster, request.release, selected.metadata) if selected else {}
+    mr = {}
+    if selected and request.release:
+        mr = build_mr_artifacts_for_clusters([request.target_kind], request.release, selected.metadata)
     result = WorkflowResult(
         request=request.__dict__,
         candidates=ranked,
