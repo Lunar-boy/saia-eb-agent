@@ -59,6 +59,9 @@ Copy and edit examples:
 cp .env.example .env
 cp config/policy.example.yaml config/policy.yaml
 cp config/settings.example.yaml config/settings.yaml
+set -a
+source .env
+set +a
 ```
 
 Environment variables for SAIA provider:
