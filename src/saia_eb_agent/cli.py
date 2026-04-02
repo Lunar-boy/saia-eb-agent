@@ -256,6 +256,16 @@ def _run_guide(
     local_upstream: Path | None,
     state_file: Path | None,
 ) -> None:
+    def _prompt(message: str, allow_empty: bool) -> str:
+        if allow_empty:
+            return typer.prompt(
+                message,
+                prompt_suffix=" ",
+                default="",
+                show_default=False,
+            )
+        return typer.prompt(message, prompt_suffix=" ")
+
     cfg = load_settings(settings)
     policy = load_policy(policy_file)
     workflow = AgentWorkflow(StateStore(state_file))
@@ -271,7 +281,7 @@ def _run_guide(
         settings=cfg,
         policy=policy,
         inputs=inputs,
-        prompt=lambda m: typer.prompt(m, prompt_suffix=" "),
+        prompt=_prompt,
         confirm=lambda m, d: typer.confirm(m, default=d),
         local_upstream_path=local_upstream,
     )
@@ -365,9 +375,10 @@ def memory_show(state_file: Path | None = typer.Option(None, "--state-file")) ->
 def memory_set_barnard_ci(path: Path, state_file: Path | None = typer.Option(None, "--state-file")) -> None:
     store = StateStore(state_file)
     state = store.load()
-    state.remembered_barnard_ci_path = path.as_posix()
+    normalized = path.expanduser().resolve(strict=False)
+    state.remembered_barnard_ci_path = normalized.as_posix()
     store.save(state)
-    console.print(f"remembered_barnard_ci_path set to: {path}")
+    console.print(f"remembered_barnard_ci_path set to: {normalized}")
 
 
 @memory_app.command(name="clear")

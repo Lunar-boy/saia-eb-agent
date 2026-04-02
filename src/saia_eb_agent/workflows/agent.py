@@ -14,7 +14,7 @@ from saia_eb_agent.workflows.prepare_mr import build_mr_artifacts_for_clusters
 from saia_eb_agent.workflows.search import search_candidates
 
 
-PromptFn = Callable[[str], str]
+PromptFn = Callable[[str, bool], str]
 ConfirmFn = Callable[[str, bool], bool]
 
 
@@ -32,6 +32,14 @@ class AgentWorkflow:
     def __init__(self, state_store: StateStore) -> None:
         self.state_store = state_store
 
+    @staticmethod
+    def _normalize_path(path: Path) -> Path:
+        return path.expanduser().resolve(strict=False)
+
+    @staticmethod
+    def _is_valid_barnard_ci(path: Path) -> bool:
+        return BarnardCIRepo(path).exists()
+
     def run(
         self,
         settings: AppSettings,
@@ -43,29 +51,39 @@ class AgentWorkflow:
     ) -> WorkflowResult:
         state = self.state_store.load()
 
-        software = (inputs.software or prompt("Enter software name:")).strip()
-        target_kind = (inputs.target_kind or prompt("Target kind [cpu/gpu]:")).strip().lower()
+        software = (inputs.software or prompt("Enter software name:", False)).strip()
+        target_kind = (inputs.target_kind or prompt("Target kind [cpu/gpu]:", False)).strip().lower()
         while target_kind not in {"cpu", "gpu"}:
-            target_kind = prompt("Target kind [cpu/gpu]:").strip().lower()
+            target_kind = prompt("Target kind [cpu/gpu]:", False).strip().lower()
 
         tc_prompt = "Enter toolchain query (example: GCC14.2.0 or foss2025a):"
-        toolchain_query = (inputs.toolchain_query or state.last_toolchain_query or prompt(tc_prompt)).strip()
+        toolchain_query = (inputs.toolchain_query or state.last_toolchain_query or prompt(tc_prompt, False)).strip()
 
         release = (inputs.release or "").strip()
         if not release and state.last_release:
             release = prompt(
-                f"Last release was {state.last_release}. Press Enter to reuse it, or type a new release:"
+                f"Last release was {state.last_release}. Press Enter to reuse it, or type a new release:",
+                True,
             ).strip()
             if not release:
                 release = state.last_release
         if not release:
-            release = prompt("Enter release (example: r25.06):").strip()
+            release = prompt("Enter release (example: r25.06):", False).strip()
 
-        barnard_ci = inputs.barnard_ci
-        if not barnard_ci and state.remembered_barnard_ci_path:
-            barnard_ci = Path(state.remembered_barnard_ci_path)
-        if not barnard_ci:
-            barnard_ci = Path(prompt("Enter barnard-ci path:").strip())
+        barnard_ci: Path | None = None
+        if inputs.barnard_ci:
+            barnard_ci = self._normalize_path(inputs.barnard_ci)
+            if not self._is_valid_barnard_ci(barnard_ci):
+                raise RuntimeError("Provided barnard-ci path does not contain easyconfigs/")
+        elif state.remembered_barnard_ci_path:
+            remembered = self._normalize_path(Path(state.remembered_barnard_ci_path))
+            if self._is_valid_barnard_ci(remembered):
+                barnard_ci = remembered
+
+        while not barnard_ci:
+            entered = self._normalize_path(Path(prompt("Enter barnard-ci path:", False).strip()))
+            if self._is_valid_barnard_ci(entered):
+                barnard_ci = entered
 
         req = RecommendRequest(
             software=software,
@@ -89,8 +107,6 @@ class AgentWorkflow:
             )
 
         repo = BarnardCIRepo(barnard_ci)
-        if not repo.exists():
-            raise RuntimeError("Provided barnard-ci path does not contain easyconfigs/")
 
         target_clusters = expand_target_kind(target_kind, policy)
 
@@ -124,6 +140,7 @@ class AgentWorkflow:
             state.release_history.append(release)
         state.last_target_kind = target_kind
         state.last_toolchain_query = toolchain_query
+        state.remembered_barnard_ci_path = barnard_ci.as_posix()
         self.state_store.save(state)
 
         mr = build_mr_artifacts_for_clusters(target_clusters, release, selected.metadata)
