@@ -34,6 +34,30 @@ def test_search_uses_tc_and_does_not_need_old_options(tmp_path: Path):
     assert bad.exit_code != 0
 
 
+def test_search_accepts_system_toolchain(tmp_path: Path):
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    (upstream / "Foo-2.0-system.eb").write_text(
+        "name = 'Foo'\nversion = '2.0'\ntoolchain = {'name': 'system'}",
+        encoding="utf-8",
+    )
+    res = runner.invoke(
+        app,
+        [
+            "search",
+            "--software",
+            "Foo",
+            "--tc",
+            "system",
+            "--local-upstream",
+            str(upstream),
+        ],
+    )
+    assert res.exit_code == 0
+    assert "Toolchain equivalence expansion" in res.stdout
+    assert "system" in res.stdout
+
+
 def test_memory_commands(tmp_path: Path):
     state_file = tmp_path / "state.json"
     set_res = runner.invoke(

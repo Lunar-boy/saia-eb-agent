@@ -38,3 +38,56 @@ def test_rank_prefers_toolchain_family_match():
     )
     ranked = rank_candidates(req, [c2, c1], toolchain_resolution=resolution)
     assert ranked[0].metadata.filename == "Foo-1.2.3-GCC-14.2.0.eb"
+
+
+def test_rank_system_prefers_newest_version():
+    req = RecommendRequest(
+        software="Foo",
+        toolchain_query="system",
+        target_kind="cpu",
+    )
+    old = EasyconfigMetadata(
+        path=Path("/tmp/Foo-1.2.3-system.eb"),
+        filename="Foo-1.2.3-system.eb",
+        software_name="Foo",
+        version="1.2.3",
+        toolchain_name="system",
+        toolchain_version=None,
+    )
+    new = EasyconfigMetadata(
+        path=Path("/tmp/Foo-1.10.0-system.eb"),
+        filename="Foo-1.10.0-system.eb",
+        software_name="Foo",
+        version="1.10.0",
+        toolchain_name="system",
+        toolchain_version=None,
+    )
+    resolution = ToolchainResolution(
+        query="system",
+        normalized="system",
+        aliases=[ToolchainAlias("system", "exact", 1.0, "normalized user query")],
+    )
+    ranked = rank_candidates(req, [old, new], toolchain_resolution=resolution)
+    assert ranked[0].metadata.filename == "Foo-1.10.0-system.eb"
+
+
+def test_rank_no_toolchain_prefers_newest_equal_score_version():
+    req = RecommendRequest(
+        software="Anaconda3",
+        target_kind="cpu",
+    )
+    old = EasyconfigMetadata(
+        path=Path("/tmp/Anaconda3-2020.11.eb"),
+        filename="Anaconda3-2020.11.eb",
+        software_name="Anaconda3",
+        version="2020.11",
+    )
+    new = EasyconfigMetadata(
+        path=Path("/tmp/Anaconda3-2022.10.eb"),
+        filename="Anaconda3-2022.10.eb",
+        software_name="Anaconda3",
+        version="2022.10",
+    )
+
+    ranked = rank_candidates(req, [old, new], toolchain_resolution=None)
+    assert ranked[0].metadata.filename == "Anaconda3-2022.10.eb"

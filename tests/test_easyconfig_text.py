@@ -32,3 +32,21 @@ def test_extract_metadata(tmp_path: Path):
     assert [patch.filename for patch in md.patches] == ["foo-fix.patch", "foo-missing.patch"]
     assert md.patches[0].exists is True
     assert md.patches[1].exists is False
+
+
+def test_extract_metadata_toolchain_system_from_content_and_filename(tmp_path: Path):
+    p = tmp_path / "Foo-2.0-system.eb"
+    p.write_text(
+        "\n".join(
+            [
+                "name = 'Foo'",
+                "version = '2.0'",
+                "toolchain = {'name': 'system'}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    md = extract_metadata(p)
+    assert md.toolchain_name == "system"
+    assert md.toolchain_version is None

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from saia_eb_agent.models import Candidate, EasyconfigMetadata, RecommendRequest
+from saia_eb_agent.parsing.filename import parse_easyconfig_filename, parse_toolchain_identifier, version_sort_key
 from saia_eb_agent.policy.detection import detect_gpu_intent
 from saia_eb_agent.toolchains.resolve import ToolchainResolution
 
@@ -14,6 +15,11 @@ def rank_candidates(
 ) -> list[Candidate]:
     ranked: list[Candidate] = []
     query = request.software.lower()
+    system_query = bool(
+        toolchain_resolution
+        and toolchain_resolution.normalized
+        and toolchain_resolution.normalized.lower() == "system"
+    )
     alias_map = {
         a.value.lower(): a for a in (toolchain_resolution.aliases if toolchain_resolution else [])
     }
@@ -102,4 +108,39 @@ def rank_candidates(
             )
         )
 
-    return sorted(ranked, key=lambda c: c.score, reverse=True)
+    def _sort_key(c: Candidate) -> tuple:
+        md = c.metadata
+        version_key = version_sort_key(md.version)
+        if not system_query:
+            return (
+                c.score,
+                version_key[0],
+                version_key[1],
+                version_key[2],
+                md.filename.lower(),
+            )
+        is_system = _is_system_toolchain(md)
+        return (
+            c.score,
+            1 if is_system else 0,
+            version_key[0],
+            version_key[1],
+            version_key[2],
+            md.filename.lower(),
+        )
+
+    return sorted(ranked, key=_sort_key, reverse=True)
+
+
+def _is_system_toolchain(metadata: EasyconfigMetadata) -> bool:
+    name = (metadata.toolchain_name or "").strip().lower()
+    version = (metadata.toolchain_version or "").strip().lower()
+    if name == "system":
+        return True
+    if name == "system" and not version:
+        return True
+    if not name:
+        filename_toolchain = parse_easyconfig_filename(metadata.filename).toolchain
+        parsed_name, _ = parse_toolchain_identifier(filename_toolchain)
+        return (parsed_name or "").lower() == "system"
+    return False

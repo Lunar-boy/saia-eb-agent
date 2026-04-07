@@ -4,7 +4,6 @@ from pathlib import Path
 
 from saia_eb_agent.config import AppSettings
 from saia_eb_agent.models import RecommendRequest
-from saia_eb_agent.providers.saia import SAIAProvider
 from saia_eb_agent.parsing.easyconfig_text import extract_metadata
 from saia_eb_agent.ranking.engine import rank_candidates
 from saia_eb_agent.repos.upstream_easybuild import UpstreamEasyBuildRepo
@@ -12,9 +11,8 @@ from saia_eb_agent.toolchains.resolve import ToolchainResolution, ToolchainResol
 
 
 def resolve_toolchain_query(settings: AppSettings, query: str | None) -> ToolchainResolution:
-    provider = SAIAProvider(settings.provider)
     cache_file = settings.cache_dir / "toolchain_aliases.json"
-    resolver = ToolchainResolver(cache_file=cache_file, provider=provider)
+    resolver = ToolchainResolver(cache_file=cache_file)
     return resolver.resolve(query)
 
 

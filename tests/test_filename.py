@@ -1,4 +1,4 @@
-from saia_eb_agent.parsing.filename import parse_easyconfig_filename
+from saia_eb_agent.parsing.filename import parse_easyconfig_filename, parse_toolchain_identifier, version_sort_key
 
 
 def test_parse_easyconfig_filename_standard():
@@ -12,3 +12,13 @@ def test_parse_easyconfig_filename_invalid():
     info = parse_easyconfig_filename("not-an-eb-file.txt")
     assert info.software_name is None
     assert info.version is None
+
+
+def test_parse_toolchain_identifier_system():
+    name, version = parse_toolchain_identifier("system")
+    assert name == "system"
+    assert version is None
+
+
+def test_version_sort_key_numeric_preferred():
+    assert version_sort_key("1.10.0") > version_sort_key("1.2.0")

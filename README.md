@@ -10,7 +10,7 @@ This project helps with:
 - upstream candidate discovery from `easybuild-easyconfigs`
 - policy-driven cluster placement checks
 - static local validation
-- safe patch preparation for `barnard-ci`
+- safe patch preparation for `cicd`
 - MR-ready text generation
 
 This project does **not** run real EasyBuild builds locally.
@@ -27,7 +27,6 @@ Every mutating action is explicit and inspectable.
 
 ## Architecture
 
-- `providers/`: LLM provider abstraction + SAIA provider
 - `repos/`: upstream easybuild + local barnard-ci adapters
 - `parsing/`: filename + easyconfig text metadata extraction
 - `policy/`: placement and dependency-domain policy
@@ -64,12 +63,7 @@ source .env
 set +a
 ```
 
-Environment variables for SAIA provider:
-- `SAIA_API_KEY`
-- `SAIA_BASE_URL`
-- `SAIA_MODEL`
-
-If `SAIA_API_KEY` is unset, the tool runs in rule-only mode.
+Toolchain resolution and ranking are deterministic and local (no external LLM dependency).
 
 ## CLI Commands
 
@@ -110,6 +104,7 @@ saia-eb-agent prepare-mr --file /path/to/Foo-1.2.3-GCC-13.2.0.eb --cluster romeo
 - Search no longer accepts `--version`, `--release`, `--gpu`, or `--refresh-upstream`.
 - Search auto-refreshes upstream easyconfigs automatically (unless `--local-upstream` is used).
 - Toolchain query uses `--tc` and resolves family equivalents (for example `GCC14.2.0` may match `GCC-14.2.0`, `GCCcore-14.2.0`, `foss-2025a`, `gfbf-2025a`).
+- `--tc system` is supported. For `system` toolchain queries, newest matching EasyConfig versions are preferred deterministically.
 - Search output includes toolchain match rationale and patch visibility (`found/declared`).
 
 ### Target cluster abstraction
@@ -171,7 +166,7 @@ Implemented checks include:
 - No local EasyBuild dry-run or full semantic easyconfig evaluation
 - Parsing is heuristic and text-based for safety and portability
 - Ranking is heuristic and should be reviewed before apply
-- SAIA API schema is assumed OpenAI-compatible (`/chat/completions`)
+- No external LLM-based expansion is used; toolchain resolution is rule-based and offline.
 
 ## What Must Still Be Verified on HPC CI
 
@@ -195,7 +190,7 @@ Coverage targets key logic:
 - easyconfig metadata extraction
 - policy engine behavior
 - ranking heuristics
-- toolchain normalization/alias expansion (including LLM fallback behavior)
+- toolchain normalization/alias expansion
 - search auto-refresh behavior
 - patch extraction/resolution metadata
 - multi-cluster apply and validation aggregation

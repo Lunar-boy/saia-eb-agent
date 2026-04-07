@@ -29,13 +29,50 @@ def test_search_auto_refresh_calls_upstream_clone(monkeypatch, tmp_path: Path):
     class _Settings:
         cache_dir = tmp_path / "cache"
 
-        class provider:
-            saia_api_key = None
-            saia_base_url = "https://example.com"
-            saia_model = "none"
-
     monkeypatch.setattr("saia_eb_agent.workflows.search.UpstreamEasyBuildRepo", _FakeRepo)
     req = RecommendRequest(software="Foo", toolchain_query="GCC14.2.0", target_kind="cpu")
     ranked = search_candidates(_Settings(), req)
     assert called["refresh"] == 1
     assert ranked
+
+
+def test_search_system_prefers_newest_candidate(tmp_path: Path):
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    (upstream / "Foo-1.2.0-system.eb").write_text(
+        "name = 'Foo'\nversion = '1.2.0'\ntoolchain = {'name': 'system'}",
+        encoding="utf-8",
+    )
+    (upstream / "Foo-1.10.0-system.eb").write_text(
+        "name = 'Foo'\nversion = '1.10.0'\ntoolchain = {'name': 'system'}",
+        encoding="utf-8",
+    )
+
+    class _Settings:
+        cache_dir = tmp_path / "cache"
+
+    req = RecommendRequest(software="Foo", toolchain_query="system", target_kind="cpu")
+    ranked = search_candidates(_Settings(), req, local_upstream_path=upstream)
+    assert ranked
+    assert ranked[0].metadata.filename == "Foo-1.10.0-system.eb"
+
+
+def test_search_no_toolchain_prefers_newest_candidate(tmp_path: Path):
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    (upstream / "Anaconda3-2020.11.eb").write_text(
+        "name = 'Anaconda3'\nversion = '2020.11'",
+        encoding="utf-8",
+    )
+    (upstream / "Anaconda3-2022.10.eb").write_text(
+        "name = 'Anaconda3'\nversion = '2022.10'",
+        encoding="utf-8",
+    )
+
+    class _Settings:
+        cache_dir = tmp_path / "cache"
+
+    req = RecommendRequest(software="Anaconda3", target_kind="cpu")
+    ranked = search_candidates(_Settings(), req, local_upstream_path=upstream)
+    assert ranked
+    assert ranked[0].metadata.filename == "Anaconda3-2022.10.eb"

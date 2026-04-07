@@ -1,7 +1,3 @@
 cache_dir: ~/.cache/saia-eb-agent
 upstream_repo_url: https://github.com/easybuilders/easybuild-easyconfigs.git
 upstream_repo_dirname: easybuild-easyconfigs
-provider:
-  saia_base_url: https://chat-ai.academiccloud.de/v1
-  saia_model: glm-4.7
-  # Prefer SAIA_API_KEY from environment or .env file

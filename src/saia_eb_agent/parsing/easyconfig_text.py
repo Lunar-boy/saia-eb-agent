@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Callable
 
 from saia_eb_agent.models import EasyconfigMetadata, EasyconfigPatch
-from saia_eb_agent.parsing.filename import parse_easyconfig_filename
+from saia_eb_agent.parsing.filename import parse_easyconfig_filename, parse_toolchain_identifier
 
 
 KEY_RE = re.compile(r"^(name|version|versionsuffix|dependencies|sources|easyblock)\s*=\s*(.+)$")
-TOOLCHAIN_RE = re.compile(r"^toolchain\s*=\s*\{\s*'name'\s*:\s*'([^']+)'\s*,\s*'version'\s*:\s*'([^']+)'\s*\}")
+TOOLCHAIN_RE = re.compile(
+    r"""^toolchain\s*=\s*\{\s*["']name["']\s*:\s*["']([^"']+)["'](?:\s*,\s*["']version["']\s*:\s*["']([^"']+)["'])?\s*\}"""
+)
 
 
 def extract_metadata(
@@ -50,9 +52,16 @@ def extract_metadata(
             continue
 
         tc_match = TOOLCHAIN_RE.match(stripped)
-        if tc_match:
+        if tc_match and not metadata.toolchain_name:
             metadata.toolchain_name = tc_match.group(1)
-            metadata.toolchain_version = tc_match.group(2)
+            metadata.toolchain_version = tc_match.group(2) or None
+
+    tc_name, tc_version = _extract_toolchain(text)
+    if tc_name:
+        metadata.toolchain_name = tc_name
+        metadata.toolchain_version = tc_version
+    elif filename_info.toolchain:
+        metadata.toolchain_name, metadata.toolchain_version = parse_toolchain_identifier(filename_info.toolchain)
 
     for declared_patch in _extract_patch_entries(text):
         filename = Path(declared_patch).name
@@ -91,6 +100,26 @@ def _extract_patch_entries(text: str) -> list[str]:
             elif isinstance(item, (list, tuple)) and item and isinstance(item[0], str):
                 values.append(item[0])
     return values
+
+
+def _extract_toolchain(text: str) -> tuple[str | None, str | None]:
+    expr = _extract_assignment_expression(text, "toolchain")
+    if not expr:
+        return None, None
+    try:
+        parsed = ast.literal_eval(expr)
+    except Exception:
+        return None, None
+
+    if isinstance(parsed, dict):
+        name = parsed.get("name")
+        version = parsed.get("version")
+        if isinstance(name, str):
+            version_text = str(version) if version is not None else None
+            return name, version_text
+    if isinstance(parsed, str):
+        return parse_toolchain_identifier(parsed)
+    return None, None
 
 
 def _extract_assignment_expression(text: str, variable: str) -> str | None:

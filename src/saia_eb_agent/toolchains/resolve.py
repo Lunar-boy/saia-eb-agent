@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-
-from saia_eb_agent.providers.base import LLMProvider
 
 
 RELEASE_TO_GCC = {
@@ -34,12 +31,10 @@ class ToolchainResolution:
 
 
 class ToolchainResolver:
-    def __init__(self, cache_file: Path | None = None, provider: LLMProvider | None = None) -> None:
+    def __init__(self, cache_file: Path | None = None) -> None:
         self.cache_file = cache_file
-        self.provider = provider
-        self._cache = self._load_cache()
 
-    def resolve(self, query: str | None, allow_llm: bool = True) -> ToolchainResolution:
+    def resolve(self, query: str | None) -> ToolchainResolution:
         raw = (query or "").strip()
         if not raw:
             return ToolchainResolution(query="", normalized="", aliases=[])
@@ -53,21 +48,14 @@ class ToolchainResolver:
         if family and version:
             self._add_family_aliases(aliases, family, version)
 
-        self._merge_cached_llm(raw, aliases)
-
-        if allow_llm and self.provider and self.provider.available() and raw not in self._cache:
-            llm_aliases = self._resolve_with_llm(raw)
-            if llm_aliases:
-                self._cache[raw] = [asdict(a) for a in llm_aliases]
-                self._save_cache()
-                aliases.extend(llm_aliases)
-
         deduped = self._dedupe_aliases(aliases)
         return ToolchainResolution(query=raw, normalized=normalized, aliases=deduped)
 
     def _normalize(self, value: str) -> str:
         compact = re.sub(r"\s+", "", value)
         compact = compact.replace("_", "-")
+        if compact.lower() == "system":
+            return "system"
         compact = re.sub(r"(?i)^(GCCcore)(\d)", r"\1-\2", compact)
         compact = re.sub(r"(?i)^(GCC)(\d)", r"\1-\2", compact)
         compact = re.sub(r"(?i)^(foss)(\d)", r"\1-\2", compact)
@@ -138,29 +126,6 @@ class ToolchainResolver:
                     )
                 )
 
-    def _resolve_with_llm(self, query: str) -> list[ToolchainAlias]:
-        assert self.provider
-        prompt = (
-            "Return up to 5 likely equivalent EasyBuild toolchain identifiers for this query. "
-            "Use only plain comma-separated values, no prose: "
-            f"{query}"
-        )
-        try:
-            text = self.provider.generate_text(prompt)
-        except Exception:
-            return []
-
-        values = [v.strip() for v in text.replace("\n", ",").split(",") if v.strip()]
-        return [
-            ToolchainAlias(
-                value=self._normalize(v),
-                source="llm",
-                confidence=0.45,
-                reason="provider-suggested relation; review recommended",
-            )
-            for v in values[:5]
-        ]
-
     def _dedupe_aliases(self, aliases: list[ToolchainAlias]) -> list[ToolchainAlias]:
         by_key: dict[str, ToolchainAlias] = {}
         for a in aliases:
@@ -168,37 +133,3 @@ class ToolchainResolver:
             if key not in by_key or by_key[key].confidence < a.confidence:
                 by_key[key] = a
         return sorted(by_key.values(), key=lambda a: (-a.confidence, a.value.lower()))
-
-    def _load_cache(self) -> dict[str, list[dict[str, object]]]:
-        if not self.cache_file or not self.cache_file.exists():
-            return {}
-        try:
-            data = json.loads(self.cache_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            return {}
-        return {}
-
-    def _save_cache(self) -> None:
-        if not self.cache_file:
-            return
-        self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.cache_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._cache, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(self.cache_file)
-
-    def _merge_cached_llm(self, query: str, aliases: list[ToolchainAlias]) -> None:
-        rows = self._cache.get(query, [])
-        for row in rows:
-            try:
-                aliases.append(
-                    ToolchainAlias(
-                        value=str(row["value"]),
-                        source=str(row.get("source", "llm")),
-                        confidence=float(row.get("confidence", 0.45)),
-                        reason=str(row.get("reason", "cached provider suggestion")),
-                    )
-                )
-            except Exception:
-                continue
