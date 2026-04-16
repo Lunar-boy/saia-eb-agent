@@ -9,7 +9,7 @@ from saia_eb_agent.models import RecommendRequest, WorkflowResult
 from saia_eb_agent.policy.rules import PlacementPolicy, expand_target_kind
 from saia_eb_agent.repos.barnard_ci import BarnardCIRepo
 from saia_eb_agent.state.store import StateStore
-from saia_eb_agent.workflows.apply import prepare_apply_multi
+from saia_eb_agent.workflows.apply import prepare_apply_multi, summarize_validation_blocking
 from saia_eb_agent.workflows.prepare_mr import build_mr_artifacts_for_clusters
 from saia_eb_agent.workflows.search import search_candidates
 
@@ -119,11 +119,26 @@ class AgentWorkflow:
             apply=False,
         )
 
-        all_ok = all(v.ok for v in validations.values())
-        can_apply = inputs.apply_changes and all_ok
-        if inputs.apply_changes and not all_ok:
-            if confirm("Validation has failures. Continue and apply anyway?", False):
+        validation_summary = summarize_validation_blocking(validations)
+        force_apply = False
+        can_apply = inputs.apply_changes and not validation_summary.has_errors
+        runtime_notes: list[str] = []
+        if inputs.apply_changes and validation_summary.has_errors:
+            if validation_summary.has_non_overridable_errors:
+                blocking_codes = ", ".join(sorted(validation_summary.non_overridable_error_codes))
+                skip_note = (
+                    "Apply skipped: validation contains non-overridable error(s) "
+                    f"({blocking_codes}); force apply is not allowed for these error types."
+                )
+                runtime_notes.append(skip_note)
+                operations.append(skip_note)
+            elif confirm("Validation has overridable failures. Force apply anyway?", False):
+                force_apply = True
                 can_apply = True
+            else:
+                skip_note = "Apply skipped: user declined force apply after overridable validation failures."
+                runtime_notes.append(skip_note)
+                operations.append(skip_note)
 
         if can_apply:
             targets, _diffs, validations, operations = prepare_apply_multi(
@@ -133,6 +148,7 @@ class AgentWorkflow:
                 release=release,
                 policy=policy,
                 apply=True,
+                force=force_apply,
             )
 
         state.last_release = release
@@ -149,6 +165,7 @@ class AgentWorkflow:
             "Validation completed for all expanded clusters.",
             f"Prepared {len(targets)} target file location(s).",
         ]
+        notes.extend(runtime_notes)
         return WorkflowResult(
             request=req.__dict__,
             candidates=ranked,

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from saia_eb_agent.models import Candidate, EasyconfigMetadata, ValidationResult
+from saia_eb_agent.models import Candidate, EasyconfigMetadata, ValidationIssue, ValidationResult
 from saia_eb_agent.state.store import AgentPersistentState, StateStore
 from saia_eb_agent.workflows.agent import AgentInputs, AgentWorkflow
 
@@ -185,3 +185,176 @@ def test_agent_workflow_reprompts_when_remembered_barnard_path_is_invalid(monkey
     assert any("Enter barnard-ci path:" in msg for msg in seen_prompts)
     assert captured["root"] == valid_barnard_ci
     assert store.load().remembered_barnard_ci_path == valid_barnard_ci.as_posix()
+
+
+def test_agent_workflow_apply_uses_force_when_confirming_failed_validation(monkeypatch, tmp_path: Path):
+    state_file = tmp_path / "state.json"
+    store = StateStore(state_file)
+    barnard_ci = _mk_barnard_ci(tmp_path, "r25.06")
+    candidate = _mk_candidate(tmp_path)
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.search_candidates", lambda *_a, **_k: [candidate])
+
+    calls: list[tuple[bool, bool]] = []
+
+    def _fake_prepare_apply_multi(candidate, barnard_repo, clusters, release, policy, apply=False, force=False, **_kwargs):
+        calls.append((apply, force))
+        targets = {c: barnard_repo.target_dir(c, release) / candidate.metadata.filename for c in clusters}
+        if not apply:
+            failed = ValidationResult(
+                ok=False,
+                issues=[ValidationIssue("error", "sources.absolute_path", "absolute path detected")],
+            )
+            return targets, {c: "" for c in clusters}, {c: failed for c in clusters}, ["dry-run"]
+        return targets, {c: "" for c in clusters}, {c: ValidationResult(ok=False, issues=[]) for c in clusters}, ["applied"]
+
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.prepare_apply_multi", _fake_prepare_apply_multi)
+
+    confirm_messages: list[str] = []
+
+    workflow = AgentWorkflow(store)
+    result = workflow.run(
+        settings=_fake_settings(),
+        policy=_fake_policy(),
+        inputs=AgentInputs(
+            software="Foo",
+            target_kind="cpu",
+            toolchain_query="GCC14.2.0",
+            release="r25.06",
+            barnard_ci=barnard_ci,
+            apply_changes=True,
+        ),
+        prompt=lambda _m, _allow_empty: "",
+        confirm=lambda m, _d: confirm_messages.append(m) or True,
+    )
+
+    assert result.selected is not None
+    assert calls == [(False, False), (True, True)]
+    assert confirm_messages == ["Validation has overridable failures. Force apply anyway?"]
+    assert "applied" in result.operations
+
+
+def test_agent_workflow_does_not_apply_when_validation_fails_and_confirm_is_false(monkeypatch, tmp_path: Path):
+    state_file = tmp_path / "state.json"
+    store = StateStore(state_file)
+    barnard_ci = _mk_barnard_ci(tmp_path, "r25.06")
+    candidate = _mk_candidate(tmp_path)
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.search_candidates", lambda *_a, **_k: [candidate])
+
+    calls: list[tuple[bool, bool]] = []
+
+    def _fake_prepare_apply_multi(candidate, barnard_repo, clusters, release, policy, apply=False, force=False, **_kwargs):
+        calls.append((apply, force))
+        targets = {c: barnard_repo.target_dir(c, release) / candidate.metadata.filename for c in clusters}
+        failed = ValidationResult(
+            ok=False,
+            issues=[ValidationIssue("error", "sources.absolute_path", "absolute path detected")],
+        )
+        return targets, {c: "" for c in clusters}, {c: failed for c in clusters}, ["dry-run"]
+
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.prepare_apply_multi", _fake_prepare_apply_multi)
+
+    confirm_messages: list[str] = []
+
+    workflow = AgentWorkflow(store)
+    result = workflow.run(
+        settings=_fake_settings(),
+        policy=_fake_policy(),
+        inputs=AgentInputs(
+            software="Foo",
+            target_kind="cpu",
+            toolchain_query="GCC14.2.0",
+            release="r25.06",
+            barnard_ci=barnard_ci,
+            apply_changes=True,
+        ),
+        prompt=lambda _m, _allow_empty: "",
+        confirm=lambda m, _d: confirm_messages.append(m) or False,
+    )
+
+    assert calls == [(False, False)]
+    assert confirm_messages == ["Validation has overridable failures. Force apply anyway?"]
+    assert any("Apply skipped: user declined force apply" in op for op in result.operations)
+
+
+def test_agent_workflow_non_overridable_validation_skips_apply_without_confirmation(monkeypatch, tmp_path: Path):
+    state_file = tmp_path / "state.json"
+    store = StateStore(state_file)
+    barnard_ci = _mk_barnard_ci(tmp_path, "r25.06")
+    candidate = _mk_candidate(tmp_path)
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.search_candidates", lambda *_a, **_k: [candidate])
+
+    calls: list[tuple[bool, bool]] = []
+
+    def _fake_prepare_apply_multi(candidate, barnard_repo, clusters, release, policy, apply=False, force=False, **_kwargs):
+        calls.append((apply, force))
+        targets = {c: barnard_repo.target_dir(c, release) / candidate.metadata.filename for c in clusters}
+        failed = ValidationResult(
+            ok=False,
+            issues=[ValidationIssue("error", "path.invalid", "invalid target path")],
+        )
+        return targets, {c: "" for c in clusters}, {c: failed for c in clusters}, ["dry-run"]
+
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.prepare_apply_multi", _fake_prepare_apply_multi)
+
+    confirm_messages: list[str] = []
+
+    workflow = AgentWorkflow(store)
+    result = workflow.run(
+        settings=_fake_settings(),
+        policy=_fake_policy(),
+        inputs=AgentInputs(
+            software="Foo",
+            target_kind="cpu",
+            toolchain_query="GCC14.2.0",
+            release="r25.06",
+            barnard_ci=barnard_ci,
+            apply_changes=True,
+        ),
+        prompt=lambda _m, _allow_empty: "",
+        confirm=lambda m, _d: confirm_messages.append(m) or True,
+    )
+
+    assert result.selected is not None
+    assert calls == [(False, False)]
+    assert confirm_messages == []
+    assert any("non-overridable error(s) (path.invalid)" in note for note in result.notes)
+    assert any("non-overridable error(s) (path.invalid)" in op for op in result.operations)
+
+
+def test_agent_workflow_apply_without_force_when_validation_is_ok(monkeypatch, tmp_path: Path):
+    state_file = tmp_path / "state.json"
+    store = StateStore(state_file)
+    barnard_ci = _mk_barnard_ci(tmp_path, "r25.06")
+    candidate = _mk_candidate(tmp_path)
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.search_candidates", lambda *_a, **_k: [candidate])
+
+    calls: list[tuple[bool, bool]] = []
+
+    def _fake_prepare_apply_multi(candidate, barnard_repo, clusters, release, policy, apply=False, force=False, **_kwargs):
+        calls.append((apply, force))
+        targets = {c: barnard_repo.target_dir(c, release) / candidate.metadata.filename for c in clusters}
+        ok_validation = ValidationResult(ok=True, issues=[])
+        op = "applied" if apply else "dry-run"
+        return targets, {c: "" for c in clusters}, {c: ok_validation for c in clusters}, [op]
+
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.prepare_apply_multi", _fake_prepare_apply_multi)
+
+    workflow = AgentWorkflow(store)
+    result = workflow.run(
+        settings=_fake_settings(),
+        policy=_fake_policy(),
+        inputs=AgentInputs(
+            software="Foo",
+            target_kind="cpu",
+            toolchain_query="GCC14.2.0",
+            release="r25.06",
+            barnard_ci=barnard_ci,
+            apply_changes=True,
+        ),
+        prompt=lambda _m, _allow_empty: "",
+        confirm=lambda _m, _d: True,
+    )
+
+    assert result.selected is not None
+    assert calls == [(False, False), (True, False)]
+    assert "applied" in result.operations

@@ -72,7 +72,7 @@ def test_search_no_toolchain_prefers_newest_candidate(tmp_path: Path):
     class _Settings:
         cache_dir = tmp_path / "cache"
 
-    req = RecommendRequest(software="Anaconda3", target_kind="cpu")
+    req = RecommendRequest(software="Anaconda3", toolchain_query=None, target_kind="cpu")
     ranked = search_candidates(_Settings(), req, local_upstream_path=upstream)
     assert ranked
     assert ranked[0].metadata.filename == "Anaconda3-2022.10.eb"

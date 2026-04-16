@@ -36,3 +36,16 @@ def test_validation_rejects_absolute_sources(tmp_path: Path):
     res = validate_easyconfig(md, text, target_file, "capella", "r25.06", PlacementPolicy(), existing_paths=[])
     assert not res.ok
     assert any(i.code == "sources.absolute_path" for i in res.issues)
+
+
+def test_validation_missing_release_dir_is_warning_only(tmp_path: Path):
+    target_file = tmp_path / "easyconfigs" / "capella" / "r25.06" / "Foo-1.2.3.eb"
+    md = EasyconfigMetadata(path=target_file, filename=target_file.name, software_name="Foo", version="1.2.3")
+    text = "name = 'Foo'\nversion = '1.2.3'\n"
+
+    res = validate_easyconfig(md, text, target_file, "capella", "r25.06", PlacementPolicy(), existing_paths=[])
+
+    release_issue = next(i for i in res.issues if i.code == "release.missing")
+    assert release_issue.severity == "warning"
+    assert "will be created during apply" in release_issue.message
+    assert res.ok

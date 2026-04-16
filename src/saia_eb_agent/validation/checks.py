@@ -29,7 +29,13 @@ def validate_easyconfig(
         )
 
     if not target_path.parent.exists():
-        issues.append(ValidationIssue("error", "release.missing", "target release directory does not exist"))
+        issues.append(
+            ValidationIssue(
+                "warning",
+                "release.missing",
+                "target release directory does not exist yet; it will be created during apply",
+            )
+        )
 
     fn = parse_easyconfig_filename(target_path.name)
     if metadata.software_name and fn.software_name and metadata.software_name != fn.software_name:

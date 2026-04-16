@@ -74,6 +74,7 @@ def test_rank_system_prefers_newest_version():
 def test_rank_no_toolchain_prefers_newest_equal_score_version():
     req = RecommendRequest(
         software="Anaconda3",
+        toolchain_query=None,
         target_kind="cpu",
     )
     old = EasyconfigMetadata(

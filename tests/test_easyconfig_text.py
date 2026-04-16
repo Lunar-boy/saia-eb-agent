@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from saia_eb_agent.parsing.easyconfig_text import extract_metadata
+from saia_eb_agent.parsing.easyconfig_text import extract_dependencies, extract_metadata
 
 
 def test_extract_metadata(tmp_path: Path):
@@ -50,3 +50,49 @@ def test_extract_metadata_toolchain_system_from_content_and_filename(tmp_path: P
     md = extract_metadata(p)
     assert md.toolchain_name == "system"
     assert md.toolchain_version is None
+
+
+def test_extract_dependencies_best_effort(tmp_path: Path):
+    p = tmp_path / "Foo-1.0-GCC-14.2.0.eb"
+    p.write_text(
+        "\n".join(
+            [
+                "name = 'Foo'",
+                "version = '1.0'",
+                "dependencies = [",
+                "  ('zlib', '1.2.13'),",
+                "  ('Python', '3.11.6', '-tests', ('GCC', '14.2.0')),",
+                "  {'name': 'HDF5', 'version': '1.14.4', 'toolchain': {'name': 'foss', 'version': '2025a'}},",
+                "  ('CUDA', '12.6', '', SYSTEM),",
+                "]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    deps, warnings = extract_dependencies(p)
+    assert warnings == []
+    assert [d.software_name for d in deps] == ["zlib", "Python", "HDF5", "CUDA"]
+    assert deps[1].versionsuffix == "-tests"
+    assert deps[1].toolchain_name == "GCC"
+    assert deps[1].toolchain_version == "14.2.0"
+    assert deps[2].toolchain_name == "foss"
+    assert deps[2].toolchain_version == "2025a"
+    assert deps[3].toolchain_name == "system"
+
+
+def test_extract_dependencies_malformed_expression(tmp_path: Path):
+    p = tmp_path / "Foo-1.0.eb"
+    p.write_text(
+        "\n".join(
+            [
+                "name = 'Foo'",
+                "version = '1.0'",
+                "dependencies = [(]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    deps, warnings = extract_dependencies(p)
+    assert deps == []
+    assert warnings

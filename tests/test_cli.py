@@ -3,7 +3,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from saia_eb_agent.cli import app
-from saia_eb_agent.models import Candidate, EasyconfigMetadata, ValidationResult, WorkflowResult
+from saia_eb_agent.models import Candidate, EasyconfigMetadata, ValidationIssue, ValidationResult, WorkflowResult
 from saia_eb_agent.state.store import AgentPersistentState, StateStore
 
 
@@ -194,3 +194,78 @@ def test_agent_cli_press_enter_reuses_last_release(monkeypatch, tmp_path: Path):
     assert res.exit_code == 0
     assert "Last release was r2026. Press Enter to reuse it, or type a new release:" in res.stdout
     assert captured["release"] == "r2026"
+
+
+def test_agent_cli_non_overridable_validation_skips_apply_without_traceback(monkeypatch, tmp_path: Path):
+    class _Settings:
+        cache_dir = tmp_path / "cache"
+
+    class _Policy:
+        cpu_clusters = ["romeo"]
+        gpu_clusters = ["capella"]
+
+    monkeypatch.setattr("saia_eb_agent.cli.load_settings", lambda _p: _Settings())
+    monkeypatch.setattr("saia_eb_agent.cli.load_policy", lambda _p: _Policy())
+
+    barnard_ci = tmp_path / "barnard-ci"
+    (barnard_ci / "easyconfigs" / "romeo" / "r2026").mkdir(parents=True)
+
+    cand = Candidate(
+        metadata=EasyconfigMetadata(
+            path=tmp_path / "mm-common-1.0-GCC-14.2.0.eb",
+            filename="mm-common-1.0-GCC-14.2.0.eb",
+            software_name="mm-common",
+            version="1.0",
+            toolchain_name="GCC",
+            toolchain_version="14.2.0",
+        ),
+        score=99.0,
+        reasons=["x"],
+        likely_edits=[],
+        risk_notes=[],
+        toolchain_match_reason="GCC-14.2.0 via exact",
+    )
+    cand.metadata.path.write_text("name = 'mm-common'\nversion = '1.0'\n", encoding="utf-8")
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.search_candidates", lambda *_a, **_k: [cand])
+
+    calls: list[tuple[bool, bool]] = []
+
+    def _fake_prepare_apply_multi(candidate, barnard_repo, clusters, release, policy, apply=False, force=False, **_kwargs):
+        calls.append((apply, force))
+        if apply:
+            raise AssertionError("apply path must not be called for non-overridable validation failures")
+        targets = {c: barnard_repo.target_dir(c, release) / candidate.metadata.filename for c in clusters}
+        failed = ValidationResult(
+            ok=False,
+            issues=[ValidationIssue("error", "path.invalid", "invalid target path")],
+        )
+        return targets, {c: "" for c in clusters}, {c: failed for c in clusters}, ["dry-run"]
+
+    monkeypatch.setattr("saia_eb_agent.workflows.agent.prepare_apply_multi", _fake_prepare_apply_multi)
+
+    res = runner.invoke(
+        app,
+        [
+            "agent",
+            "--software",
+            "mm-common",
+            "--cluster",
+            "cpu",
+            "--tc",
+            "GCC14.2.0",
+            "--release",
+            "r2026",
+            "--barnard-ci",
+            str(barnard_ci),
+            "--apply",
+        ],
+        input="y\n",
+    )
+
+    assert res.exit_code == 0
+    assert calls == [(False, False)]
+    assert "Validation summary:" in res.stdout
+    assert "path.invalid" in res.stdout
+    assert "invalid target path" in res.stdout
+    assert "Apply skipped: validation contains non-overridable error(s) (path.invalid);" in res.stdout
+    assert "Traceback" not in res.stdout
